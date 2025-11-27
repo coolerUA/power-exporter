@@ -2,13 +2,16 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -64,10 +67,142 @@ type BatteryInfo struct {
 }
 
 var (
+	// Version is set by ldflags during build
+	version = "dev"
+
 	config     Config
 	batteries  []string
 	promGauges = make(map[string]map[string]*prometheus.GaugeVec)
+
+	repoOwner = "coolerUA"
+	repoName  = "power-exporter"
 )
+
+type GitHubRelease struct {
+	TagName string `json:"tag_name"`
+	Assets  []struct {
+		Name               string `json:"name"`
+		BrowserDownloadURL string `json:"browser_download_url"`
+	} `json:"assets"`
+}
+
+func getLatestRelease() (*GitHubRelease, error) {
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", repoOwner, repoName)
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("GitHub API returned %d", resp.StatusCode)
+	}
+
+	var release GitHubRelease
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return nil, err
+	}
+	return &release, nil
+}
+
+func compareVersions(current, latest string) int {
+	// Remove 'v' prefix
+	current = strings.TrimPrefix(current, "v")
+	latest = strings.TrimPrefix(latest, "v")
+
+	cParts := strings.Split(current, ".")
+	lParts := strings.Split(latest, ".")
+
+	for i := 0; i < 3; i++ {
+		var c, l int
+		if i < len(cParts) {
+			c, _ = strconv.Atoi(cParts[i])
+		}
+		if i < len(lParts) {
+			l, _ = strconv.Atoi(lParts[i])
+		}
+		if c < l {
+			return -1
+		}
+		if c > l {
+			return 1
+		}
+	}
+	return 0
+}
+
+func selfUpdate() error {
+	release, err := getLatestRelease()
+	if err != nil {
+		return fmt.Errorf("failed to get latest release: %w", err)
+	}
+
+	if compareVersions(version, release.TagName) >= 0 {
+		fmt.Printf("Already up to date (current: %s, latest: %s)\n", version, release.TagName)
+		return nil
+	}
+
+	fmt.Printf("Updating from %s to %s\n", version, release.TagName)
+
+	// Find matching asset
+	assetName := fmt.Sprintf("power-exporter-%s-%s", runtime.GOOS, runtime.GOARCH)
+	var downloadURL string
+	for _, asset := range release.Assets {
+		if asset.Name == assetName {
+			downloadURL = asset.BrowserDownloadURL
+			break
+		}
+	}
+	if downloadURL == "" {
+		return fmt.Errorf("no binary found for %s/%s", runtime.GOOS, runtime.GOARCH)
+	}
+
+	// Download new binary
+	resp, err := http.Get(downloadURL)
+	if err != nil {
+		return fmt.Errorf("failed to download: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Get current executable path
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get executable path: %w", err)
+	}
+	exe, err = filepath.EvalSymlinks(exe)
+	if err != nil {
+		return fmt.Errorf("failed to resolve symlinks: %w", err)
+	}
+
+	// Write to temp file
+	tmpFile := exe + ".new"
+	f, err := os.OpenFile(tmpFile, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0755)
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		f.Close()
+		os.Remove(tmpFile)
+		return fmt.Errorf("failed to write binary: %w", err)
+	}
+	f.Close()
+
+	// Replace old binary
+	oldFile := exe + ".old"
+	os.Remove(oldFile)
+	if err := os.Rename(exe, oldFile); err != nil {
+		os.Remove(tmpFile)
+		return fmt.Errorf("failed to backup old binary: %w", err)
+	}
+	if err := os.Rename(tmpFile, exe); err != nil {
+		os.Rename(oldFile, exe)
+		return fmt.Errorf("failed to install new binary: %w", err)
+	}
+	os.Remove(oldFile)
+
+	fmt.Printf("Updated to %s\n", release.TagName)
+	return nil
+}
 
 func loadConfig(path string) error {
 	data, err := os.ReadFile(path)
@@ -380,7 +515,21 @@ func main() {
 	install := flag.Bool("install", false, "Install as systemd service")
 	binPath := flag.String("bin", "/usr/local/bin/power-exporter", "Binary path for installation")
 	installConfigPath := flag.String("config", "/usr/local/etc/power-exporter.yml", "Config path for installation")
+	showVersion := flag.Bool("version", false, "Show version")
+	update := flag.Bool("update", false, "Update to latest version")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("power-exporter %s\n", version)
+		return
+	}
+
+	if *update {
+		if err := selfUpdate(); err != nil {
+			log.Fatalf("Update failed: %v", err)
+		}
+		return
+	}
 
 	if *genConfig != "" {
 		if err := os.WriteFile(*genConfig, []byte(defaultConfig), 0644); err != nil {
