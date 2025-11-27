@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -304,9 +305,81 @@ influxdb:
   bucket: "your-bucket"
 `
 
+const systemdUnitTemplate = `[Unit]
+Description=Power Exporter - Exports power/energy metrics to Prometheus
+Documentation=https://github.com/coolerUA/power-exporter
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%s -c %s
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+`
+
+func installSystemd(binPath, configPath string) error {
+	// Get current executable
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get executable path: %w", err)
+	}
+
+	// Copy binary to destination
+	binData, err := os.ReadFile(exe)
+	if err != nil {
+		return fmt.Errorf("failed to read binary: %w", err)
+	}
+	if err := os.WriteFile(binPath, binData, 0755); err != nil {
+		return fmt.Errorf("failed to write binary to %s: %w", binPath, err)
+	}
+	fmt.Printf("Binary installed to %s\n", binPath)
+
+	// Generate config if not exists
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		if err := os.WriteFile(configPath, []byte(defaultConfig), 0644); err != nil {
+			return fmt.Errorf("failed to write config: %w", err)
+		}
+		fmt.Printf("Config created at %s\n", configPath)
+	} else {
+		fmt.Printf("Config already exists at %s\n", configPath)
+	}
+
+	// Create systemd unit
+	unitContent := fmt.Sprintf(systemdUnitTemplate, binPath, configPath)
+	unitPath := "/etc/systemd/system/power-exporter.service"
+	if err := os.WriteFile(unitPath, []byte(unitContent), 0644); err != nil {
+		return fmt.Errorf("failed to write systemd unit: %w", err)
+	}
+	fmt.Printf("Systemd unit created at %s\n", unitPath)
+
+	// Reload systemd and enable/start service
+	cmds := [][]string{
+		{"systemctl", "daemon-reload"},
+		{"systemctl", "enable", "power-exporter"},
+		{"systemctl", "start", "power-exporter"},
+	}
+	for _, args := range cmds {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to run %v: %w", args, err)
+		}
+	}
+	fmt.Println("Service enabled and started")
+	return nil
+}
+
 func main() {
 	configPath := flag.String("c", ".power-exporter.yml", "Path to config file")
 	genConfig := flag.String("gc", "", "Generate default config file at specified path")
+	install := flag.Bool("install", false, "Install as systemd service")
+	binPath := flag.String("bin", "/usr/local/bin/power-exporter", "Binary path for installation")
+	installConfigPath := flag.String("config", "/usr/local/etc/power-exporter.yml", "Config path for installation")
 	flag.Parse()
 
 	if *genConfig != "" {
@@ -314,6 +387,13 @@ func main() {
 			log.Fatalf("Failed to write config: %v", err)
 		}
 		fmt.Printf("Config written to %s\n", *genConfig)
+		return
+	}
+
+	if *install {
+		if err := installSystemd(*binPath, *installConfigPath); err != nil {
+			log.Fatalf("Installation failed: %v", err)
+		}
 		return
 	}
 

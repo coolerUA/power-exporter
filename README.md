@@ -53,6 +53,34 @@ vim .power-exporter.yml
 ./power-exporter -gc /etc/power-exporter.yml
 ```
 
+## Systemd Installation
+
+Install as a systemd service (requires root):
+
+```bash
+# Install with defaults
+# Binary: /usr/local/bin/power-exporter
+# Config: /usr/local/etc/power-exporter.yml
+sudo ./power-exporter -install
+
+# Install with custom paths
+sudo ./power-exporter -install -bin /opt/power-exporter -config /etc/power-exporter.yml
+```
+
+This will:
+- Copy binary to the specified location
+- Create default config if it doesn't exist
+- Create and enable systemd service
+- Start the service
+
+Manage the service:
+
+```bash
+sudo systemctl status power-exporter
+sudo systemctl restart power-exporter
+sudo journalctl -u power-exporter -f
+```
+
 ## Configuration
 
 Generate a default config file:
