@@ -1,0 +1,28 @@
+# Power Exporter Configuration
+
+# Polling interval in seconds
+interval: 10
+
+# Hostname for metrics tagging
+host: "myhost"
+
+# Prometheus metrics server (scrape endpoint)
+prometheus:
+  enabled: true
+  port: 9273
+  path: "/metrics"
+
+# Prometheus Pushgateway
+pushgateway:
+  enabled: false
+  url: "http://localhost:9091"
+  job: "power_exporter"
+
+# InfluxDB push
+influxdb:
+  enabled: false
+  url: "http://localhost:8086"
+  token: "your-token"
+  org: "your-org"
+  bucket: "your-bucket"
+
