@@ -30,8 +30,8 @@ All metrics have a `battery` label (BAT0, BAT1, etc.)
 # Download from releases or build from source
 go build -o power-exporter .
 
-# Copy example config
-cp power-exporter.yml.example .power-exporter.yml
+# Generate default config
+./power-exporter -gc .power-exporter.yml
 
 # Edit config
 vim .power-exporter.yml
@@ -48,9 +48,18 @@ vim .power-exporter.yml
 
 # Specify config file
 ./power-exporter -c /etc/power-exporter.yml
+
+# Generate default config at specified path
+./power-exporter -gc /etc/power-exporter.yml
 ```
 
 ## Configuration
+
+Generate a default config file:
+
+```bash
+./power-exporter -gc .power-exporter.yml
+```
 
 See `power-exporter.yml.example` for all options.
 

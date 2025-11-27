@@ -275,9 +275,47 @@ func updateMetrics() {
 	}
 }
 
+const defaultConfig = `# Power Exporter Configuration
+
+# Polling interval in seconds
+interval: 10
+
+# Hostname for metrics tagging
+host: "myhost"
+
+# Prometheus metrics server (scrape endpoint)
+prometheus:
+  enabled: true
+  port: 9273
+  path: "/metrics"
+
+# Prometheus Pushgateway
+pushgateway:
+  enabled: false
+  url: "http://localhost:9091"
+  job: "power_exporter"
+
+# InfluxDB push
+influxdb:
+  enabled: false
+  url: "http://localhost:8086"
+  token: "your-token"
+  org: "your-org"
+  bucket: "your-bucket"
+`
+
 func main() {
 	configPath := flag.String("c", ".power-exporter.yml", "Path to config file")
+	genConfig := flag.String("gc", "", "Generate default config file at specified path")
 	flag.Parse()
+
+	if *genConfig != "" {
+		if err := os.WriteFile(*genConfig, []byte(defaultConfig), 0644); err != nil {
+			log.Fatalf("Failed to write config: %v", err)
+		}
+		fmt.Printf("Config written to %s\n", *genConfig)
+		return
+	}
 
 	if err := loadConfig(*configPath); err != nil {
 		log.Fatalf("Failed to load config: %v", err)
