@@ -1,3 +1,9 @@
+# StandWithUkraine
+
+[![SWUbanner](https://raw.githubusercontent.com/vshymanskyy/StandWithUkraine/main/banner-direct.svg)](https://github.com/vshymanskyy/StandWithUkraine/blob/main/docs/README.md)
+![License](https://img.shields.io/badge/License-MIT-yellow)
+[![StandWithUkraine](https://raw.githubusercontent.com/vshymanskyy/StandWithUkraine/main/badges/StandWithUkraine.svg)](https://github.com/vshymanskyy/StandWithUkraine/blob/main/docs/README.md)
+
 # Power Exporter
 
 Battery metrics exporter for Linux systems. Exports battery information to Prometheus (scrape/push) and InfluxDB.
